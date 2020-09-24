@@ -5,6 +5,8 @@ import datetime
 import os
 import errno
 import bz2
+import glob
+import subprocess
 
 class RouteViews():
     def __init__(self):
@@ -13,6 +15,7 @@ class RouteViews():
         self._rib_endpoint = 'http://archive.routeviews.org/'
         #http://archive.routeviews.org/route-views.amsix/bgpdata/
         self._MAX_AGE = 90
+        self.collectedFiles = []
         return None
     
     @staticmethod
@@ -56,8 +59,10 @@ class RouteViews():
                 print(f"Beginning Decompresion of {collector}...")
                 decompress_data = bz2.decompress(r.content)
                 open(f'{outputDirectory}/{collector}.decomp', 'wb').write(decompress_data)
+
             except Exception as e:
                 print(f'Error Unzipping File Contents for {collector}: {e}')
+                return None
             print(f"Finished {collector}...")
             return f"{outputDirectory}/{collector}.decomp"
 
@@ -78,7 +83,9 @@ class RouteViews():
                 print(f"Issue with {collector}, skipping...")
                 continue
             ##TODO add a func to check if the latest date is not too old
-            files.append(self.getRibFile(outputDirectory, latestFileURL, collector))
+            file = self.getRibFile(outputDirectory, latestFileURL, collector)
+            if file is not None:
+                self.collectedFiles.append(file)
             
 
     @staticmethod
@@ -124,6 +131,37 @@ class RouteViews():
             return True
         else:
             return False
+    def parseFiles(self, inputDirectory=None):
+        if len(self.collectedFiles) == 0:
+            ##parse directory instead
+            filesToParse = []
+            for filename in glob.glob(f"{inputDirectory}/*"):
+                filesToParse.append(os.path.abspath(filename))
+        else:
+            filesToParse = self.collectedFiles
+        for filename in filesToParse:
+            print(filename)
+            self.runCommand(filename)
+
+    @staticmethod
+    def runCommand(filename):
+        outputFilename = filename.replace("decomp","hmnread")
+        with open(f"{outputFilename}", "wb") as outputFile:
+            print(f"gc {filename}| select -first 10")
+            process = subprocess.Popen(f"gc {filename}| select -first 10", stdout=subprocess.PIPE, shell=True)
+            while True:
+                output = process.stdout.readline()
+                print(output)
+                if (output == '' or output == b'') and process.poll() is not None:
+                    break
+                if output:
+                    outputFile.write(output.replace("|", ","))
+            rc = process.poll()
+            return rc
+
+
+        
+
         
         
         
